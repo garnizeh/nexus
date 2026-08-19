@@ -67,16 +67,6 @@ type Enemy struct {
 	PathIndex int
 }
 
-// Hero representa um herói
-type Hero struct {
-	Entity
-	Damage     float64
-	Speed      float64
-	Level      int
-	Experience float64
-	AbilityCooldown float64
-	CanUseAbility   bool
-}
 
 // Projectile representa um projétil
 type Projectile struct {
