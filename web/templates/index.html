@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Siege - Protótipo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+        
+        #game-container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            background: #16213e;
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: #0f3460;
+        }
+        
+        #sidebar {
+            width: 300px;
+            background: #1a1a2e;
+            padding: 20px;
+            border-left: 2px solid #e94560;
+            overflow-y: auto;
+        }
+        
+        h1 {
+            color: #e94560;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        .stat-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .stat-box h3 {
+            color: #e94560;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .stat-value {
+            color: #00d9ff;
+            font-weight: bold;
+        }
+        
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 100%;
+            margin-bottom: 10px;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #ff6b6b;
+        }
+        
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        
+        .tower-select {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .tower-card {
+            background: #16213e;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tower-card:hover {
+            border-color: #e94560;
+        }
+        
+        .tower-card.selected {
+            border-color: #00d9ff;
+            background: #0f3460;
+        }
+        
+        .tower-card h4 {
+            color: #e94560;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        
+        .tower-card p {
+            font-size: 11px;
+            color: #aaa;
+        }
+        
+        #log {
+            background: #16213e;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 11px;
+            font-family: monospace;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+            border-bottom: 1px solid #333;
+        }
+        
+        .log-info { color: #00d9ff; }
+        .log-success { color: #00ff88; }
+        .log-error { color: #ff6b6b; }
+        .log-warning { color: #ffcc00; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="canvas-container">
+            <canvas id="gameCanvas"></canvas>
+        </div>
+        
+        <div id="sidebar">
+            <h1>🏰 Nexus Siege</h1>
+            
+            <div class="stat-box">
+                <h3>Recursos</h3>
+                <div class="stat">
+                    <span>Ouro:</span>
+                    <span class="stat-value" id="gold">100</span>
+                </div>
+                <div class="stat">
+                    <span>Essência:</span>
+                    <span class="stat-value" id="essence">0</span>
+                </div>
+                <div class="stat">
+                    <span>Wave:</span>
+                    <span class="stat-value" id="wave">0</span>
+                </div>
+            </div>
+            
+            <div class="stat-box">
+                <h3>Construção</h3>
+                <div class="tower-select">
+                    <div class="tower-card selected" data-tower="basic" data-cost="50">
+                        <h4>Torre Básica</h4>
+                        <p>Dano: 10 | Alcance: 100</p>
+                        <p style="color: #00d9ff;">50 ouro</p>
+                    </div>
+                    <div class="tower-card" data-tower="cannon" data-cost="80">
+                        <h4>Canhão</h4>
+                        <p>Dano: 25 | Alcance: 80</p>
+                        <p style="color: #00d9ff;">80 ouro</p>
+                    </div>
+                    <div class="tower-card" data-tower="laser" data-cost="70">
+                        <h4>Laser</h4>
+                        <p>Dano: 5 | Alcance: 120</p>
+                        <p style="color: #00d9ff;">70 ouro</p>
+                    </div>
+                    <div class="tower-card" data-tower="missile" data-cost="100">
+                        <h4>Míssil</h4>
+                        <p>Dano: 15 | Alcance: 150</p>
+                        <p style="color: #00d9ff;">100 ouro</p>
+                    </div>
+                </div>
+                <button id="startWaveBtn">🌊 Iniciar Wave</button>
+            </div>
+            
+            <div class="stat-box">
+                <h3>Log</h3>
+                <div id="log"></div>
+            </div>
+            
+            <div class="stat-box">
+                <h3>Controles</h3>
+                <p style="font-size: 12px; color: #aaa; margin-bottom: 10px;">
+                    • Clique no mapa para construir<br>
+                    • Selecione torres no painel<br>
+                    • Inicie waves para ganhar ouro
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuração do Canvas
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            canvas.width = document.getElementById('canvas-container').clientWidth;
+            canvas.height = document.getElementById('canvas-container').clientHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Estado do jogo
+        let gameState = {
+            gold: 100,
+            essence: 0,
+            wave: 0,
+            entities: [],
+            towers: [],
+            enemies: []
+        };
+        
+        let selectedTower = 'basic';
+        let selectedTowerCost = 50;
+        
+        // Logging
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+            
+            // Manter apenas últimas 20 entradas
+            while (logDiv.children.length > 20) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+        
+        // Atualizar UI
+        function updateUI() {
+            document.getElementById('gold').textContent = Math.floor(gameState.gold);
+            document.getElementById('essence').textContent = Math.floor(gameState.essence);
+            document.getElementById('wave').textContent = gameState.wave;
+        }
+        
+        // Renderizar jogo
+        function render() {
+            // Limpar canvas
+            ctx.fillStyle = '#0f3460';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Desenhar grid
+            ctx.strokeStyle = '#16213e';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            // Desenhar caminho (path simples)
+            ctx.strokeStyle = '#1a1a2e';
+            ctx.lineWidth = 60;
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height / 2);
+            ctx.lineTo(canvas.width, canvas.height / 2);
+            ctx.stroke();
+            
+            // Desenhar torres
+            gameState.towers.forEach(tower => {
+                ctx.fillStyle = '#e94560';
+                ctx.fillRect(tower.x - 15, tower.y - 15, 30, 30);
+                
+                // Barra de vida
+                const healthPercent = tower.health / tower.maxHealth;
+                ctx.fillStyle = '#333';
+                ctx.fillRect(tower.x - 15, tower.y - 22, 30, 5);
+                ctx.fillStyle = '#00ff88';
+                ctx.fillRect(tower.x - 15, tower.y - 22, 30 * healthPercent, 5);
+            });
+            
+            // Desenhar inimigos
+            gameState.enemies.forEach(enemy => {
+                ctx.fillStyle = '#ff6b6b';
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, 12, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Barra de vida
+                const healthPercent = enemy.health / enemy.maxHealth;
+                ctx.fillStyle = '#333';
+                ctx.fillRect(enemy.x - 10, enemy.y - 18, 20, 4);
+                ctx.fillStyle = '#ff6b6b';
+                ctx.fillRect(enemy.x - 10, enemy.y - 18, 20 * healthPercent, 4);
+            });
+            
+            requestAnimationFrame(render);
+        }
+        
+        // Clique no canvas para construir
+        canvas.addEventListener('click', async (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (gameState.gold < selectedTowerCost) {
+                log('Ouro insuficiente!', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/build', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x, y, tower_type: selectedTower })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    gameState.gold -= selectedTowerCost;
+                    gameState.towers.push({
+                        id: result.tower_id,
+                        x: x,
+                        y: y,
+                        health: 100,
+                        maxHealth: 100
+                    });
+                    updateUI();
+                    log(`Torre ${selectedTower} construída em (${Math.round(x)}, ${Math.round(y)})`, 'success');
+                } else {
+                    log(result.error || 'Erro ao construir torre', 'error');
+                }
+            } catch (err) {
+                log(`Erro: ${err.message}`, 'error');
+            }
+        });
+        
+        // Seção de Unidades
+        const unitSection = document.createElement('div');
+        unitSection.className = 'stat-box';
+        unitSection.innerHTML = `
+            <h3>Unidades</h3>
+            <div class="tower-select">
+                <div class="tower-card" data-unit="soldier" data-cost="60">
+                    <h4>Soldado</h4>
+                    <p>Dano: 10 | Vida: 100</p>
+                    <p style="color: #00d9ff;">60 ouro</p>
+                </div>
+                <div class="tower-card" data-unit="tank" data-cost="100">
+                    <h4>Tanque</h4>
+                    <p>Dano: 15 | Vida: 200</p>
+                    <p style="color: #00d9ff;">100 ouro</p>
+                </div>
+                <div class="tower-card" data-unit="ranger" data-cost="70">
+                    <h4>Ranger</h4>
+                    <p>Dano: 12 | Vida: 60</p>
+                    <p style="color: #00d9ff;">70 ouro</p>
+                </div>
+            </div>
+            <p style="font-size: 11px; color: #aaa; margin-bottom: 10px;">
+                • Clique em uma unidade para selecionar<br>
+                • Clique no mapa para mover
+            </p>
+        `;
+        document.querySelector('#sidebar').insertBefore(unitSection, document.querySelector('#log').parentElement);
+        
+        let selectedUnitId = null;
+        
+        // Seleção de unidades
+        document.querySelectorAll('[data-unit]').forEach(card => {
+            card.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('[data-unit]').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                
+                const unitType = card.dataset.unit;
+                const cost = parseInt(card.dataset.cost);
+                
+                if (gameState.gold >= cost) {
+                    try {
+                        const response = await fetch('/api/unit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                x: canvas.width / 2, 
+                                y: canvas.height / 2 + 100, 
+                                unit_type: unitType,
+                                faction: 1
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        if (result.success) {
+                            gameState.gold -= cost;
+                            gameState.units = gameState.units || [];
+                            gameState.units.push({
+                                id: result.unit_id,
+                                x: canvas.width / 2,
+                                y: canvas.height / 2 + 100,
+                                type: unitType,
+                                moving: false
+                            });
+                            updateUI();
+                            log(`${unitType} criado!`, 'success');
+                        }
+                    } catch (err) {
+                        log(`Erro: ${err.message}`, 'error');
+                    }
+                } else {
+                    log('Ouro insuficiente!', 'error');
+                }
+            });
+        });
+        
+        // Clique para mover unidade
+        canvas.addEventListener('click', async (e) => {
+            if (!selectedUnitId) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            try {
+                await fetch('/api/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ unit_id: selectedUnitId, target_x: x, target_y: y })
+                });
+                log(`Unidade movendo para (${Math.round(x)}, ${Math.round(y)})`, 'info');
+            } catch (err) {
+                log(`Erro: ${err.message}`, 'error');
+            }
+        });
+        
+        // Seleção de torres
+        document.querySelectorAll('.tower-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.tower-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedTower = card.dataset.tower;
+                selectedTowerCost = parseInt(card.dataset.cost);
+                log(`Torre selecionada: ${card.querySelector('h4').textContent}`, 'info');
+            });
+        });
+        
+        // Botão iniciar wave
+        document.getElementById('startWaveBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/wave', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    gameState.wave = result.wave;
+                    log(`Wave ${result.wave} iniciada! ${result.enemies} inimigos`, 'success');
+                    updateUI();
+                    
+                    // Spawn visual de inimigos (placeholder)
+                    for (let i = 0; i < Math.min(result.enemies, 10); i++) {
+                        setTimeout(() => {
+                            gameState.enemies.push({
+                                id: Date.now() + i,
+                                x: 20,
+                                y: canvas.height / 2 + (i * 20 - result.enemies * 10),
+                                health: 50,
+                                maxHealth: 50,
+                                speed: 20
+                            });
+                        }, i * 500);
+                    }
+                }
+            } catch (err) {
+                log(`Erro ao iniciar wave: ${err.message}`, 'error');
+            }
+        });
+        
+        // Polling do estado do jogo
+        async function fetchGameState() {
+            try {
+                const response = await fetch('/api/state');
+                const state = await response.json();
+                
+                // Atualizar estado local
+                gameState.gold = state.Gold || gameState.gold;
+                gameState.essence = state.Essence || gameState.essence;
+                gameState.wave = state.Wave || gameState.wave;
+                
+                // Atualizar entidades
+                if (state.Towers) {
+                    gameState.towers = Object.values(state.Towers).map(t => ({
+                        id: t.ID,
+                        x: t.X,
+                        y: t.Y,
+                        health: t.Health,
+                        maxHealth: t.MaxHealth
+                    }));
+                }
+                
+                if (state.Enemies) {
+                    gameState.enemies = Object.values(state.Enemies).map(e => ({
+                        id: e.ID,
+                        x: e.X,
+                        y: e.Y,
+                        health: e.Health,
+                        maxHealth: e.MaxHealth
+                    }));
+                }
+                
+                updateUI();
+            } catch (err) {
+                // Silencioso - servidor pode estar offline
+            }
+        }
+        
+        // Inicialização
+        log('Nexus Siege iniciado!', 'success');
+        log('Construa torres para se defender', 'info');
+        updateUI();
+        render();
+        
+        // Polling a cada 500ms
+        setInterval(fetchGameState, 500);
+    </script>
+</body>
+</html>
