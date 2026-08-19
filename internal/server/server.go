@@ -40,6 +40,10 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("/api/unit", s.handleCreateUnit)
 	mux.HandleFunc("/api/move", s.handleMoveUnit)
 	mux.HandleFunc("/api/sabotage", s.handleSabotage)
+	mux.HandleFunc("/api/hero", s.handleCreateHero)
+	mux.HandleFunc("/api/swarm", s.handleCreateSwarmUnit)
+	mux.HandleFunc("/api/ability", s.handleUseAbility)
+	mux.HandleFunc("/ws", s.handleWebSocket)
 	
 	// Página principal
 	mux.HandleFunc("/", s.handleIndex)
@@ -299,5 +303,169 @@ func (s *Server) handleSabotage(w http.ResponseWriter, r *http.Request) {
 		"success":  true,
 		"enemies":  numEnemies,
 		"message":  "Horda de sabotagem enviada!",
+	})
+}
+
+// handleCreateHero lida com a criação de heróis
+func (s *Server) handleCreateHero(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		X           float64 `json:"x"`
+		Y           float64 `json:"y"`
+		HeroType    string  `json:"hero_type"` // tank, support, damage, swarm
+		AbilityType int     `json:"ability_type"`
+		Faction     int     `json:"faction"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	cost := 200.0 // custo base do herói
+	
+	if s.gameState.Gold < cost && entity.Faction(req.Faction) != entity.FactionVoraciousSwarm {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Gold insufficient"})
+		return
+	}
+	
+	if entity.Faction(req.Faction) == entity.FactionVoraciousSwarm {
+		if s.gameState.Essence < cost/2 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Essence insufficient"})
+			return
+		}
+		s.gameState.Essence -= cost / 2
+	} else {
+		s.gameState.Gold -= cost
+	}
+	
+	abilityType := entity.AbilityType(req.AbilityType)
+	if abilityType == entity.AbilityNone {
+		// Default ability based on hero type
+		switch req.HeroType {
+		case "tank":
+			abilityType = entity.AbilityShockwave
+		case "support":
+			abilityType = entity.AbilityHeal
+		case "damage":
+			abilityType = entity.AbilitySnipe
+		case "swarm":
+			abilityType = entity.AbilityAcidSpray
+		}
+	}
+	
+	hero := s.gameState.AddHero(req.X, req.Y, req.HeroType, abilityType)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"hero_id": hero.ID,
+		"cost":    cost,
+	})
+}
+
+// handleCreateSwarmUnit lida com a criação de unidades do Enxame
+func (s *Server) handleCreateSwarmUnit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		X        float64 `json:"x"`
+		Y        float64 `json:"y"`
+		UnitType string  `json:"unit_type"` // drone, stalker, behemoth
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Determinar custo baseado no tipo
+	cost := 15.0
+	switch req.UnitType {
+	case "behemoth":
+		cost = 40
+	case "stalker":
+		cost = 25
+	}
+	
+	if s.gameState.Essence < cost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Essence insufficient"})
+		return
+	}
+	
+	s.gameState.Essence -= cost
+	swarm := s.gameState.AddSwarmUnit(req.X, req.Y, req.UnitType)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":   true,
+		"swarm_id":  swarm.ID,
+		"cost":      cost,
+	})
+}
+
+// handleUseAbility lida com o uso de habilidades de herói
+func (s *Server) handleUseAbility(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		HeroID uint64 `json:"hero_id"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	success := s.gameState.UseHeroAbility(req.HeroID)
+	
+	w.Header().Set("Content-Type", "application/json")
+	if success {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Habilidade usada com sucesso!",
+		})
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Habilidade não disponível",
+		})
+	}
+}
+
+// handleWebSocket lida com conexões WebSocket para multiplayer
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// WebSocket handler será implementado com gorilla/websocket
+	// Por enquanto, retorna um status de que o endpoint existe
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "WebSocket endpoint ready - implement full handler with gorilla/websocket",
 	})
 }
