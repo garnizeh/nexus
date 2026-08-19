@@ -1,3 +1,6 @@
+Vou criar o GDD completo em formato markdown para você:
+
+```markdown
 # 📖 Game Design Document — Nexus Siege
 
 > **Versão:** 1.0  
@@ -74,19 +77,20 @@
 
 ### 🔄 Core Loop (Ciclo Principal)
 
+```
 ┌─────────────────────────────────────────────────┐
 │                                                 │
-│ CONSTRUIR DEFENDER                              │
-│ (torres/base) ←→ (waves neutras)                │
-│ ↓ ↓                                             │
-│ PRODUZIR ACUMULAR                               │
-│ (unidades) (recursos de kills)                  │
-│ ↓ ↓                                             │
-│ ATACAR SABOTAR                                  │
-│ (base inimiga) (enviar hordas)                  │
+│   CONSTRUIR          DEFENDER                   │
+│   (torres/base)  ←→  (waves neutras)            │
+│        ↓                ↓                       │
+│   PRODUZIR         ACUMULAR                     │
+│   (unidades)       (recursos de kills)          │
+│        ↓                ↓                       │
+│   ATACAR           SABOTAR                      │
+│   (base inimiga)   (enviar hordas)              │
 │                                                 │
 └─────────────────────────────────────────────────┘
-
+```
 
 ### 💡 Experiência Desejada
 
@@ -759,4 +763,4 @@
 
 ### 🎯 Mecânicas Específicas
 
-- **Sabotagem (enviar hordas):** Inspirado em *Dune: Spice Wars* e *Age of Empires*
+- **Sabotagem (enviar hordas):** Inspirado em *Dune: Spice Wars* e *Age of Empires* (raids)
