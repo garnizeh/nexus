@@ -67,6 +67,31 @@ type Enemy struct {
 	PathIndex int
 }
 
+// Hero representa um herói
+type Hero struct {
+	Entity
+	Damage          float64
+	Speed           float64
+	Level           int
+	Experience      float64
+	Ability         HeroAbility
+	CanUseAbility   bool
+	HeroType        string // "tank", "support", "damage", "swarm"
+}
+
+// SwarmUnit representa uma unidade do Enxame Voraz
+type SwarmUnit struct {
+	Entity
+	Damage    float64
+	Speed     float64
+	AttackRange float64
+	TargetX   float64
+	TargetY   float64
+	Moving    bool
+	Attacking bool
+	UnitType  string // "drone", "stalker", "behemoth"
+	EssenceCost float64
+}
 
 // Projectile representa um projétil
 type Projectile struct {
