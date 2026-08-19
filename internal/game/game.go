@@ -9,14 +9,14 @@ import (
 type GameState struct {
 	Tick        uint64
 	Gold        float64
-	Essence     float64 // recurso da facção Enxame
+	Essence     float64
 	Wave        int
 	Entities    map[uint64]*entity.Entity
 	Towers      map[uint64]*entity.Tower
 	Units       map[uint64]*entity.Unit
+	SwarmUnits  map[uint64]*entity.SwarmUnit
 	Enemies     map[uint64]*entity.Enemy
 	Heroes      map[uint64]*entity.Hero
-	SwarmUnits  map[uint64]*entity.SwarmUnit
 	Projectiles map[uint64]*entity.Projectile
 	NextID      uint64
 }
@@ -26,14 +26,14 @@ func NewGameState() *GameState {
 	return &GameState{
 		Tick:        0,
 		Gold:        100,
-		Essence:     50, // começa com essência para o Enxame
+		Essence:     50, // Começa com essência para o Enxame
 		Wave:        0,
 		Entities:    make(map[uint64]*entity.Entity),
 		Towers:      make(map[uint64]*entity.Tower),
 		Units:       make(map[uint64]*entity.Unit),
+		SwarmUnits:  make(map[uint64]*entity.SwarmUnit),
 		Enemies:     make(map[uint64]*entity.Enemy),
 		Heroes:      make(map[uint64]*entity.Hero),
-		SwarmUnits:  make(map[uint64]*entity.SwarmUnit),
 		Projectiles: make(map[uint64]*entity.Projectile),
 		NextID:      1,
 	}
@@ -159,234 +159,14 @@ func (gs *GameState) AddEnemy(x, y float64, wave int) *entity.Enemy {
 	return enemy
 }
 
-// AddHero adiciona um herói ao jogo
-func (gs *GameState) AddHero(x, y float64, heroType string, abilityType entity.AbilityType) *entity.Hero {
-	id := gs.GenerateID()
-	hero := &entity.Hero{
-		Entity: entity.Entity{
-			ID:        id,
-			Type:      entity.EntityHero,
-			X:         x,
-			Y:         y,
-			Health:    150,
-			MaxHealth: 150,
-			Dead:      false,
-		},
-		HeroType: heroType,
-		Damage:   20,
-		Speed:    45,
-		Level:    1,
-		Experience: 0,
-		Ability: entity.HeroAbility{
-			Type:            abilityType,
-			CurrentCooldown: 0,
-			Ready:           true,
-			Level:           1,
-		},
-		CanUseAbility: true,
-	}
-	
-	// Configurar stats baseados no tipo de herói
-	switch heroType {
-	case "tank":
-		hero.Health = 250
-		hero.MaxHealth = 250
-		hero.Damage = 15
-	case "support":
-		hero.Health = 100
-		hero.MaxHealth = 100
-		hero.Damage = 10
-	case "damage":
-		hero.Health = 120
-		hero.MaxHealth = 120
-		hero.Damage = 30
-	case "swarm":
-		hero.Faction = entity.FactionVoraciousSwarm
-		hero.Health = 180
-		hero.MaxHealth = 180
-		hero.Damage = 25
-	}
-	
-	gs.Heroes[id] = hero
-	gs.Entities[id] = &hero.Entity
-	return hero
-}
-
-// AddSwarmUnit adiciona uma unidade do Enxame ao jogo
-func (gs *GameState) AddSwarmUnit(x, y float64, unitType string) *entity.SwarmUnit {
-	id := gs.GenerateID()
-	swarm := &entity.SwarmUnit{
-		Entity: entity.Entity{
-			ID:        id,
-			Type:      entity.EntityUnit,
-			Faction:   entity.FactionVoraciousSwarm,
-			X:         x,
-			Y:         y,
-			Health:    40,
-			MaxHealth: 40,
-			Dead:      false,
-		},
-		UnitType:    unitType,
-		TargetX:     x,
-		TargetY:     y,
-		Moving:      false,
-		Attacking:   false,
-	}
-	
-	// Configurar stats baseados no tipo de unidade do Enxame
-	switch unitType {
-	case "behemoth":
-		swarm.Damage = 20
-		swarm.Speed = 25
-		swarm.AttackRange = 30
-		swarm.Health = 150
-		swarm.MaxHealth = 150
-		swarm.EssenceCost = 40
-	case "stalker":
-		swarm.Damage = 12
-		swarm.Speed = 55
-		swarm.AttackRange = 40
-		swarm.Health = 50
-		swarm.MaxHealth = 50
-		swarm.EssenceCost = 25
-	default: // drone
-		swarm.Damage = 8
-		swarm.Speed = 45
-		swarm.AttackRange = 35
-		swarm.EssenceCost = 15
-	}
-	
-	gs.SwarmUnits[id] = swarm
-	gs.Entities[id] = &swarm.Entity
-	return swarm
-}
-
-// UseHeroAbility usa a habilidade do herói
-func (gs *GameState) UseHeroAbility(heroID uint64) bool {
-	hero, exists := gs.Heroes[heroID]
-	if !exists || !hero.CanUseAbility {
-		return false
-	}
-	
-	ability := entity.GetAbility(hero.Ability.Type)
-	if ability.Cooldown > 0 {
-		hero.Ability.CurrentCooldown = ability.Cooldown
-		hero.Ability.Ready = false
-		hero.CanUseAbility = false
-	}
-	
-	// Aplicar efeito da habilidade baseado no tipo
-	switch hero.Ability.Type {
-	case entity.AbilityShockwave:
-		// Dano em área ao redor do herói
-		for _, enemy := range gs.Enemies {
-			dx := enemy.X - hero.X
-			dy := enemy.Y - hero.Y
-			dist := dx*dx + dy*dy
-			if dist <= ability.Range*ability.Range {
-				enemy.Health -= ability.Damage
-				if enemy.Health <= 0 {
-					enemy.Dead = true
-					gs.Gold += enemy.Bounty
-				}
-			}
-		}
-		// Afeta unidades do Enxame também
-		for _, swarm := range gs.SwarmUnits {
-			dx := swarm.X - hero.X
-			dy := swarm.Y - hero.Y
-			dist := dx*dx + dy*dy
-			if dist <= ability.Range*ability.Range {
-				swarm.Health -= ability.Damage
-				if swarm.Health <= 0 {
-					swarm.Dead = true
-					gs.Gold += 5
-				}
-			}
-		}
-		
-	case entity.AbilityHeal:
-		// Cura unidades aliadas próximas
-		for _, unit := range gs.Units {
-			if unit.Faction == hero.Faction || hero.Faction == entity.FactionNone {
-				dx := unit.X - hero.X
-				dy := unit.Y - hero.Y
-				dist := dx*dx + dy*dy
-				if dist <= ability.Range*ability.Range {
-					unit.Health += ability.HealAmount
-					if unit.Health > unit.MaxHealth {
-						unit.Health = unit.MaxHealth
-					}
-				}
-			}
-		}
-		// Cura o próprio herói
-		hero.Health += ability.HealAmount
-		if hero.Health > hero.MaxHealth {
-			hero.Health = hero.MaxHealth
-		}
-		
-	case entity.AbilitySnipe:
-		// Dano massivo no inimigo mais próximo
-		var closest *entity.Enemy
-		closestDist := ability.Range * ability.Range
-		for _, enemy := range gs.Enemies {
-			dx := enemy.X - hero.X
-			dy := enemy.Y - hero.Y
-			dist := dx*dx + dy*dy
-			if dist < closestDist && !enemy.Dead {
-				closest = enemy
-				closestDist = dist
-			}
-		}
-		if closest != nil {
-			closest.Health -= ability.Damage
-			if closest.Health <= 0 {
-				closest.Dead = true
-				gs.Gold += closest.Bounty
-			}
-		}
-		
-	case entity.AbilitySwarmRush:
-		// Aumenta velocidade das unidades do Enxame próximas
-		if hero.Faction == entity.FactionVoraciousSwarm {
-			for _, swarm := range gs.SwarmUnits {
-				dx := swarm.X - hero.X
-				dy := swarm.Y - hero.Y
-				dist := dx*dx + dy*dy
-				if dist <= ability.Range*ability.Range {
-					swarm.Speed *= 1.5 // +50% velocidade
-				}
-			}
-		}
-		
-	case entity.AbilityAcidSpray:
-		// Dano contínuo em área
-		for _, enemy := range gs.Enemies {
-			dx := enemy.X - hero.X
-			dy := enemy.Y - hero.Y
-			dist := dx*dx + dy*dy
-			if dist <= ability.Range*ability.Range {
-				enemy.Health -= ability.Damage
-				if enemy.Health <= 0 {
-					enemy.Dead = true
-					gs.Gold += enemy.Bounty
-				}
-			}
-		}
-	}
-	
-	return true
-}
-
 // RemoveEntity remove uma entidade do jogo
 func (gs *GameState) RemoveEntity(id uint64) {
 	delete(gs.Entities, id)
 	delete(gs.Towers, id)
 	delete(gs.Units, id)
+	delete(gs.SwarmUnits, id)
 	delete(gs.Enemies, id)
 	delete(gs.Heroes, id)
-	delete(gs.SwarmUnits, id)
 	delete(gs.Projectiles, id)
 }
 
@@ -399,14 +179,14 @@ func (gs *GameState) Update(dt float64) {
 		gs.updateTower(tower, dt)
 	}
 	
-	// Atualizar unidades
+	// Atualizar unidades da Vanguarda
 	for _, unit := range gs.Units {
 		gs.updateUnit(unit, dt)
 	}
 	
 	// Atualizar unidades do Enxame
-	for _, swarm := range gs.SwarmUnits {
-		gs.updateSwarmUnit(swarm, dt)
+	for _, swarmUnit := range gs.SwarmUnits {
+		gs.updateSwarmUnit(swarmUnit, dt)
 	}
 	
 	// Atualizar heróis
@@ -418,9 +198,6 @@ func (gs *GameState) Update(dt float64) {
 	for _, proj := range gs.Projectiles {
 		gs.updateProjectile(proj, dt)
 	}
-	
-	// Gerar essência passivamente para o Enxame
-	gs.Essence += 0.1 * dt
 	
 	// Limpar entidades mortas
 	gs.cleanupDeadEntities()
@@ -521,14 +298,8 @@ func (gs *GameState) cleanupDeadEntities() {
 		}
 	}
 	
-	for id, swarm := range gs.SwarmUnits {
-		if swarm.Dead {
-			toRemove = append(toRemove, id)
-		}
-	}
-	
-	for id, hero := range gs.Heroes {
-		if hero.Dead {
+	for id, swarmUnit := range gs.SwarmUnits {
+		if swarmUnit.Dead {
 			toRemove = append(toRemove, id)
 		}
 	}
@@ -599,107 +370,85 @@ func (gs *GameState) updateUnit(unit *entity.Unit, dt float64) {
 			}
 		}
 	}
-	
-	// Atacar unidades do Enxame se estiverem próximas
-	if !unit.Attacking {
-		for _, swarm := range gs.SwarmUnits {
-			if swarm.Dead {
-				continue
-			}
-			dx := swarm.X - unit.X
-			dy := swarm.Y - unit.Y
-			dist := math.Sqrt(dx*dx + dy*dy)
-			
-			if dist <= unit.AttackRange {
-				unit.Attacking = true
-				swarm.Health -= unit.Damage * dt
-				if swarm.Health <= 0 {
-					swarm.Dead = true
-					gs.Gold += 5 // recompensa por matar unidade do enxame
-				}
-				break
-			}
-		}
-	}
 }
 
 // updateSwarmUnit move e faz a unidade do Enxame combater
-func (gs *GameState) updateSwarmUnit(swarm *entity.SwarmUnit, dt float64) {
+func (gs *GameState) updateSwarmUnit(swarmUnit *entity.SwarmUnit, dt float64) {
 	// Se estiver movendo, mover até o alvo
-	if swarm.Moving {
-		dx := swarm.TargetX - swarm.X
-		dy := swarm.TargetY - swarm.Y
+	if swarmUnit.Moving {
+		dx := swarmUnit.TargetX - swarmUnit.X
+		dy := swarmUnit.TargetY - swarmUnit.Y
 		dist := math.Sqrt(dx*dx + dy*dy)
 		
 		if dist < 1 {
-			swarm.Moving = false
+			swarmUnit.Moving = false
 		} else {
-			swarm.X += dx / dist * swarm.Speed * dt
-			swarm.Y += dy / dist * swarm.Speed * dt
+			swarmUnit.X += dx / dist * swarmUnit.Speed * dt
+			swarmUnit.Y += dy / dist * swarmUnit.Speed * dt
 		}
 	}
 	
-	// Procurar inimigos próximos para atacar (torres, unidades, heróis)
-	swarm.Attacking = false
+	// Procurar inimigos próximos para atacar (torres e unidades da Vanguarda)
+	swarmUnit.Attacking = false
 	
 	// Atacar torres
 	for _, tower := range gs.Towers {
 		if tower.Dead {
 			continue
 		}
-		dx := tower.X - swarm.X
-		dy := tower.Y - swarm.Y
+		dx := tower.X - swarmUnit.X
+		dy := tower.Y - swarmUnit.Y
 		dist := math.Sqrt(dx*dx + dy*dy)
 		
-		if dist <= swarm.AttackRange {
-			swarm.Attacking = true
-			tower.Health -= swarm.Damage * dt
+		if dist <= swarmUnit.AttackRange {
+			swarmUnit.Attacking = true
+			tower.Health -= swarmUnit.Damage * dt
 			if tower.Health <= 0 {
 				tower.Dead = true
-				gs.Essence += 10 // ganha essência ao destruir torre
+				gs.Essence += 5 // Ganha essência ao destruir torre
 			}
 			break
 		}
 	}
 	
-	// Atacar unidades inimigas
-	if !swarm.Attacking {
-		for _, unit := range gs.Units {
-			if unit.Dead {
+	// Se não atacou torre, atacar unidades da Vanguarda
+	if !swarmUnit.Attacking {
+		for _, otherUnit := range gs.Units {
+			if otherUnit.Dead {
 				continue
 			}
-			dx := unit.X - swarm.X
-			dy := unit.Y - swarm.Y
+			dx := otherUnit.X - swarmUnit.X
+			dy := otherUnit.Y - swarmUnit.Y
 			dist := math.Sqrt(dx*dx + dy*dy)
 			
-			if dist <= swarm.AttackRange {
-				swarm.Attacking = true
-				unit.Health -= swarm.Damage * dt
-				if unit.Health <= 0 {
-					unit.Dead = true
-					gs.Essence += 8
+			if dist <= swarmUnit.AttackRange {
+				swarmUnit.Attacking = true
+				otherUnit.Health -= swarmUnit.Damage * dt
+				if otherUnit.Health <= 0 {
+					otherUnit.Dead = true
+					gs.Essence += 3 // Ganha essência ao matar unidade
 				}
 				break
 			}
 		}
 	}
 	
-	// Atacar heróis
-	if !swarm.Attacking {
+	// Se não atacou nada, atacar heróis
+	if !swarmUnit.Attacking {
 		for _, hero := range gs.Heroes {
 			if hero.Dead {
 				continue
 			}
-			dx := hero.X - swarm.X
-			dy := hero.Y - swarm.Y
+			dx := hero.X - swarmUnit.X
+			dy := hero.Y - swarmUnit.Y
 			dist := math.Sqrt(dx*dx + dy*dy)
 			
-			if dist <= swarm.AttackRange {
-				swarm.Attacking = true
-				hero.Health -= swarm.Damage * dt
+			if dist <= swarmUnit.AttackRange {
+				swarmUnit.Attacking = true
+				hero.Health -= swarmUnit.Damage * dt
 				if hero.Health <= 0 {
 					hero.Dead = true
-					gs.Essence += 25
+					gs.Essence += 20 // Ganha muita essência ao matar herói
 				}
 				break
 			}
@@ -707,17 +456,170 @@ func (gs *GameState) updateSwarmUnit(swarm *entity.SwarmUnit, dt float64) {
 	}
 }
 
-// updateHero atualiza o herói e suas habilidades
+// updateHero atualiza o herói
 func (gs *GameState) updateHero(hero *entity.Hero, dt float64) {
-	// Reduzir cooldown da habilidade
-	if hero.Ability.CurrentCooldown > 0 {
-		hero.Ability.CurrentCooldown -= dt
-		if hero.Ability.CurrentCooldown <= 0 {
-			hero.Ability.Ready = true
-			hero.Ability.CurrentCooldown = 0
+	// Atualizar cooldown de habilidades
+	if hero.AbilityCooldown > 0 {
+		hero.AbilityCooldown -= dt
+		if hero.AbilityCooldown <= 0 {
+			hero.CanUseAbility = true
+			hero.AbilityCooldown = 0
 		}
 	}
 	
-	// Herói pode usar habilidade se estiver pronta
-	hero.CanUseAbility = hero.Ability.Ready
+	// Herói segue lógica similar às unidades
+	// (movimento e combate serão implementados no frontend)
+}
+
+// AddSwarmUnit adiciona uma unidade do Enxame ao jogo
+func (gs *GameState) AddSwarmUnit(x, y float64, unitType entity.SwarmUnitType) *entity.SwarmUnit {
+	id := gs.GenerateID()
+	swarmUnit := entity.NewSwarmUnit(id, x, y, unitType)
+	
+	gs.SwarmUnits[id] = swarmUnit
+	gs.Entities[id] = &swarmUnit.Entity
+	return swarmUnit
+}
+
+// AddHero adiciona um herói ao jogo
+func (gs *GameState) AddHero(x, y float64, heroClass entity.HeroClass) *entity.Hero {
+	id := gs.GenerateID()
+	hero := entity.NewHero(id, x, y, heroClass)
+	
+	gs.Heroes[id] = hero
+	gs.Entities[id] = &hero.Entity
+	return hero
+}
+
+// UseHeroAbility usa uma habilidade de um herói
+func (gs *GameState) UseHeroAbility(heroID uint64, ability entity.AbilityType, targetX, targetY float64) bool {
+	hero, exists := gs.Heroes[heroID]
+	if !exists || hero.Dead {
+		return false
+	}
+	
+	if !hero.UseAbility(ability) {
+		return false
+	}
+	
+	// Aplicar efeito da habilidade
+	switch ability {
+	case entity.AbilityBlast:
+		// Dano em área ao redor do herói
+		for _, enemy := range gs.Enemies {
+			dx := enemy.X - hero.X
+			dy := enemy.Y - hero.Y
+			dist := math.Sqrt(dx*dx + dy*dy)
+			if dist <= 100 { // Raio de 100 unidades
+				enemy.Health -= 50
+				if enemy.Health <= 0 {
+					enemy.Dead = true
+					gs.Gold += enemy.Bounty
+					hero.GainExperience(10)
+				}
+			}
+		}
+		// Também afeta unidades do Enxame
+		for _, swarmUnit := range gs.SwarmUnits {
+			dx := swarmUnit.X - hero.X
+			dy := swarmUnit.Y - hero.Y
+			dist := math.Sqrt(dx*dx + dy*dy)
+			if dist <= 100 {
+				swarmUnit.Health -= 50
+				if swarmUnit.Health <= 0 {
+					swarmUnit.Dead = true
+					hero.GainExperience(15)
+				}
+			}
+		}
+		
+	case entity.AbilityHeal:
+		// Cura todas as unidades aliadas próximas
+		for _, unit := range gs.Units {
+			if unit.Faction == entity.FactionIronVanguard && !unit.Dead {
+				dx := unit.X - hero.X
+				dy := unit.Y - hero.Y
+				dist := math.Sqrt(dx*dx + dy*dy)
+				if dist <= 80 {
+					unit.Health = unit.MaxHealth
+				}
+			}
+		}
+		// Cura o próprio herói
+		hero.Health = hero.MaxHealth
+		
+	case entity.AbilityShield:
+		// Escudo temporário (implementação simplificada - cura imediata)
+		hero.Health = hero.MaxHealth * 1.5
+		
+	case entity.AbilityTeleport:
+		// Teleporta para a posição alvo
+		hero.X = targetX
+		hero.Y = targetY
+		
+	case entity.AbilityNuke:
+		// Dano massivo em área grande
+		for _, enemy := range gs.Enemies {
+			dx := enemy.X - targetX
+			dy := enemy.Y - targetY
+			dist := math.Sqrt(dx*dx + dy*dy)
+			if dist <= 150 {
+				enemy.Health -= 100
+				if enemy.Health <= 0 {
+					enemy.Dead = true
+					gs.Gold += enemy.Bounty
+					hero.GainExperience(20)
+				}
+			}
+		}
+		// Também afeta unidades do Enxame
+		for _, swarmUnit := range gs.SwarmUnits {
+			dx := swarmUnit.X - targetX
+			dy := swarmUnit.Y - targetY
+			dist := math.Sqrt(dx*dx + dy*dy)
+			if dist <= 150 {
+				swarmUnit.Health -= 100
+				if swarmUnit.Health <= 0 {
+					swarmUnit.Dead = true
+					hero.GainExperience(25)
+				}
+			}
+		}
+	}
+	
+	return true
+}
+
+// SabotageWave envia uma horda de sabotagem contra o jogador
+func (gs *GameState) SabotageWave(waveIntensity int) int {
+	enemiesSpawned := 0
+	
+	// Spawn de inimigos baseado na intensidade
+	for i := 0; i < waveIntensity; i++ {
+		x := float64(i % 10 * 50)
+		y := -float64(i/10 * 50)
+		gs.AddEnemy(x, y, gs.Wave+1)
+		enemiesSpawned++
+	}
+	
+	// Chance de spawnar unidade do Enxame
+	if waveIntensity >= 5 {
+		swarmCount := waveIntensity / 5
+		for i := 0; i < swarmCount; i++ {
+			x := float64(400 + i*30)
+			y := -50.0
+			var unitType entity.SwarmUnitType
+			if i%3 == 0 {
+				unitType = entity.SwarmBehemoth
+			} else if i%3 == 1 {
+				unitType = entity.SwarmStalker
+			} else {
+				unitType = entity.SwarmDrone
+			}
+			gs.AddSwarmUnit(x, y, unitType)
+		}
+	}
+	
+	gs.Wave++
+	return enemiesSpawned
 }

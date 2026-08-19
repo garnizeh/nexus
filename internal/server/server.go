@@ -14,8 +14,8 @@ import (
 
 // Server representa o servidor do jogo
 type Server struct {
-	gameState *game.GameState
-	mu        sync.RWMutex
+	gameState  *game.GameState
+	mu         sync.RWMutex
 	httpServer *http.Server
 }
 
@@ -41,9 +41,8 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("/api/move", s.handleMoveUnit)
 	mux.HandleFunc("/api/sabotage", s.handleSabotage)
 	mux.HandleFunc("/api/hero", s.handleCreateHero)
-	mux.HandleFunc("/api/swarm", s.handleCreateSwarmUnit)
 	mux.HandleFunc("/api/ability", s.handleUseAbility)
-	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/api/swarm", s.handleCreateSwarmUnit)
 	
 	// Página principal
 	mux.HandleFunc("/", s.handleIndex)
@@ -306,7 +305,7 @@ func (s *Server) handleSabotage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleCreateHero lida com a criação de heróis
+// handleCreateHero cria um novo herói
 func (s *Server) handleCreateHero(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -314,11 +313,9 @@ func (s *Server) handleCreateHero(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	var req struct {
-		X           float64 `json:"x"`
-		Y           float64 `json:"y"`
-		HeroType    string  `json:"hero_type"` // tank, support, damage, swarm
-		AbilityType int     `json:"ability_type"`
-		Faction     int     `json:"faction"`
+		X         float64 `json:"x"`
+		Y         float64 `json:"y"`
+		HeroClass string  `json:"hero_class"`
 	}
 	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -329,53 +326,94 @@ func (s *Server) handleCreateHero(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	cost := 200.0 // custo base do herói
+	// Converter classe do herói
+	var heroClass entity.HeroClass
+	switch req.HeroClass {
+	case "commander":
+		heroClass = entity.HeroCommander
+	case "engineer":
+		heroClass = entity.HeroEngineer
+	case "scout":
+		heroClass = entity.HeroScout
+	case "juggernaut":
+		heroClass = entity.HeroJuggernaut
+	default:
+		heroClass = entity.HeroCommander
+	}
 	
-	if s.gameState.Gold < cost && entity.Faction(req.Faction) != entity.FactionVoraciousSwarm {
+	cost := 200.0
+	if s.gameState.Gold < cost {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Gold insufficient"})
 		return
 	}
 	
-	if entity.Faction(req.Faction) == entity.FactionVoraciousSwarm {
-		if s.gameState.Essence < cost/2 {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Essence insufficient"})
-			return
-		}
-		s.gameState.Essence -= cost / 2
-	} else {
-		s.gameState.Gold -= cost
-	}
-	
-	abilityType := entity.AbilityType(req.AbilityType)
-	if abilityType == entity.AbilityNone {
-		// Default ability based on hero type
-		switch req.HeroType {
-		case "tank":
-			abilityType = entity.AbilityShockwave
-		case "support":
-			abilityType = entity.AbilityHeal
-		case "damage":
-			abilityType = entity.AbilitySnipe
-		case "swarm":
-			abilityType = entity.AbilityAcidSpray
-		}
-	}
-	
-	hero := s.gameState.AddHero(req.X, req.Y, req.HeroType, abilityType)
+	s.gameState.Gold -= cost
+	hero := s.gameState.AddHero(req.X, req.Y, heroClass)
 	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"hero_id": hero.ID,
-		"cost":    cost,
+		"success":   true,
+		"hero_id":   hero.ID,
+		"hero_class": req.HeroClass,
 	})
 }
 
-// handleCreateSwarmUnit lida com a criação de unidades do Enxame
+// handleUseAbility usa uma habilidade de herói
+func (s *Server) handleUseAbility(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		HeroID    uint64  `json:"hero_id"`
+		Ability   string  `json:"ability"`
+		TargetX   float64 `json:"target_x"`
+		TargetY   float64 `json:"target_y"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Converter tipo de habilidade
+	var abilityType entity.AbilityType
+	switch req.Ability {
+	case "blast":
+		abilityType = entity.AbilityBlast
+	case "heal":
+		abilityType = entity.AbilityHeal
+	case "shield":
+		abilityType = entity.AbilityShield
+	case "teleport":
+		abilityType = entity.AbilityTeleport
+	case "nuke":
+		abilityType = entity.AbilityNuke
+	default:
+		abilityType = entity.AbilityBlast
+	}
+	
+	success := s.gameState.UseHeroAbility(req.HeroID, abilityType, req.TargetX, req.TargetY)
+	
+	w.Header().Set("Content-Type", "application/json")
+	if success {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"ability": req.Ability,
+		})
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to use ability"})
+	}
+}
+
+// handleCreateSwarmUnit cria uma unidade do Enxame Voraz
 func (s *Server) handleCreateSwarmUnit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -385,7 +423,7 @@ func (s *Server) handleCreateSwarmUnit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		X        float64 `json:"x"`
 		Y        float64 `json:"y"`
-		UnitType string  `json:"unit_type"` // drone, stalker, behemoth
+		UnitType string  `json:"unit_type"`
 	}
 	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -396,13 +434,26 @@ func (s *Server) handleCreateSwarmUnit(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	// Determinar custo baseado no tipo
-	cost := 15.0
+	// Converter tipo de unidade
+	var unitType entity.SwarmUnitType
 	switch req.UnitType {
+	case "drone":
+		unitType = entity.SwarmDrone
+	case "stalker":
+		unitType = entity.SwarmStalker
 	case "behemoth":
-		cost = 40
+		unitType = entity.SwarmBehemoth
+	default:
+		unitType = entity.SwarmDrone
+	}
+	
+	// Obter custo da essência
+	cost := 10.0
+	switch req.UnitType {
 	case "stalker":
 		cost = 25
+	case "behemoth":
+		cost = 60
 	}
 	
 	if s.gameState.Essence < cost {
@@ -413,59 +464,12 @@ func (s *Server) handleCreateSwarmUnit(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	s.gameState.Essence -= cost
-	swarm := s.gameState.AddSwarmUnit(req.X, req.Y, req.UnitType)
+	swarmUnit := s.gameState.AddSwarmUnit(req.X, req.Y, unitType)
 	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":   true,
-		"swarm_id":  swarm.ID,
-		"cost":      cost,
-	})
-}
-
-// handleUseAbility lida com o uso de habilidades de herói
-func (s *Server) handleUseAbility(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	
-	var req struct {
-		HeroID uint64 `json:"hero_id"`
-	}
-	
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
-	}
-	
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	
-	success := s.gameState.UseHeroAbility(req.HeroID)
-	
-	w.Header().Set("Content-Type", "application/json")
-	if success {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"message": "Habilidade usada com sucesso!",
-		})
-	} else {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Habilidade não disponível",
-		})
-	}
-}
-
-// handleWebSocket lida com conexões WebSocket para multiplayer
-func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// WebSocket handler será implementado com gorilla/websocket
-	// Por enquanto, retorna um status de que o endpoint existe
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "WebSocket endpoint ready - implement full handler with gorilla/websocket",
+		"unit_id":   swarmUnit.ID,
+		"unit_type": req.UnitType,
 	})
 }
