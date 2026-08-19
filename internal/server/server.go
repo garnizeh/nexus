@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"nexussiege/internal/entity"
 	"nexussiege/internal/game"
 )
 
@@ -36,6 +37,9 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("/api/state", s.handleGetState)
 	mux.HandleFunc("/api/build", s.handleBuildTower)
 	mux.HandleFunc("/api/wave", s.handleStartWave)
+	mux.HandleFunc("/api/unit", s.handleCreateUnit)
+	mux.HandleFunc("/api/move", s.handleMoveUnit)
+	mux.HandleFunc("/api/sabotage", s.handleSabotage)
 	
 	// Página principal
 	mux.HandleFunc("/", s.handleIndex)
@@ -91,8 +95,9 @@ func (s *Server) handleBuildTower(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	var req struct {
-		X float64 `json:"x"`
-		Y float64 `json:"y"`
+		X         float64 `json:"x"`
+		Y         float64 `json:"y"`
+		TowerType string  `json:"tower_type"`
 	}
 	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -104,20 +109,31 @@ func (s *Server) handleBuildTower(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	
 	// Verificar se tem ouro suficiente
-	if s.gameState.Gold < 50 {
+	cost := 50.0
+	switch req.TowerType {
+	case "cannon":
+		cost = 80
+	case "laser":
+		cost = 70
+	case "missile":
+		cost = 100
+	}
+	
+	if s.gameState.Gold < cost {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Gold insufficient"})
 		return
 	}
 	
-	s.gameState.Gold -= 50
-	tower := s.gameState.AddTower(req.X, req.Y)
+	s.gameState.Gold -= cost
+	tower := s.gameState.AddTower(req.X, req.Y, req.TowerType)
 	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":  true,
 		"tower_id": tower.ID,
+		"cost":     cost,
 	})
 }
 
@@ -146,5 +162,142 @@ func (s *Server) handleStartWave(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"wave": wave,
 		"enemies": numEnemies,
+	})
+}
+
+// handleCreateUnit lida com a criação de unidades
+func (s *Server) handleCreateUnit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		X        float64 `json:"x"`
+		Y        float64 `json:"y"`
+		UnitType string  `json:"unit_type"` // soldier, tank, ranger
+		Faction  int     `json:"faction"`   // 1 = IronVanguard, 2 = VoraciousSwarm
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Verificar se tem ouro suficiente
+	cost := 60.0
+	switch req.UnitType {
+	case "tank":
+		cost = 100
+	case "ranger":
+		cost = 70
+	}
+	
+	if s.gameState.Gold < cost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Gold insufficient"})
+		return
+	}
+	
+	s.gameState.Gold -= cost
+	faction := entity.Faction(req.Faction)
+	if faction == entity.FactionNone {
+		faction = entity.FactionIronVanguard
+	}
+	unit := s.gameState.AddUnit(req.X, req.Y, req.UnitType, faction)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"unit_id": unit.ID,
+		"cost":    cost,
+	})
+}
+
+// handleMoveUnit lida com o movimento de unidades
+func (s *Server) handleMoveUnit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		UnitID  uint64  `json:"unit_id"`
+		TargetX float64 `json:"target_x"`
+		TargetY float64 `json:"target_y"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	unit, exists := s.gameState.Units[req.UnitID]
+	if !exists {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unit not found"})
+		return
+	}
+	
+	unit.TargetX = req.TargetX
+	unit.TargetY = req.TargetY
+	unit.Moving = true
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleSabotage lida com o envio de horda de sabotagem
+func (s *Server) handleSabotage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		EssenceCost float64 `json:"essence_cost"`
+		TargetX     float64 `json:"target_x"`
+		TargetY     float64 `json:"target_y"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Verificar se tem essência suficiente
+	if s.gameState.Essence < req.EssenceCost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Essence insufficient"})
+		return
+	}
+	
+	s.gameState.Essence -= req.EssenceCost
+	
+	// Spawnar horda de inimigos na posição alvo (sabotagem)
+	numEnemies := int(req.EssenceCost / 10)
+	for i := 0; i < numEnemies; i++ {
+		s.gameState.AddEnemy(req.TargetX+float64(i*5), req.TargetY, 99)
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"enemies":  numEnemies,
+		"message":  "Horda de sabotagem enviada!",
 	})
 }

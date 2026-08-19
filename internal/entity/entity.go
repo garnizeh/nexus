@@ -1,5 +1,14 @@
 package entity
 
+// Faction representa a facção da entidade
+type Faction int
+
+const (
+	FactionNone Faction = iota
+	FactionIronVanguard  // Vanguarda de Ferro
+	FactionVoraciousSwarm // Enxame Voraz
+)
+
 // EntityType define o tipo da entidade
 type EntityType int
 
@@ -15,6 +24,7 @@ const (
 type Entity struct {
 	ID        uint64
 	Type      EntityType
+	Faction   Faction
 	X         float64
 	Y         float64
 	Health    float64
@@ -31,6 +41,7 @@ type Tower struct {
 	FireRate   float64 // tiros por segundo
 	LastFire   float64 // tempo do último tiro
 	TargetID   uint64
+	TowerType  string  // "basic", "cannon", "laser", "missile"
 }
 
 // Unit representa uma unidade controlável
@@ -38,9 +49,12 @@ type Unit struct {
 	Entity
 	Damage   float64
 	Speed    float64
+	AttackRange float64
 	TargetX  float64
 	TargetY  float64
 	Moving   bool
+	Attacking bool
+	UnitType string  // "soldier", "tank", "ranger"
 }
 
 // Enemy representa um inimigo (wave PvE)

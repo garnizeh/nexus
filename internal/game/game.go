@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"nexussiege/internal/entity"
 )
 
@@ -44,27 +45,92 @@ func (gs *GameState) GenerateID() uint64 {
 }
 
 // AddTower adiciona uma torre ao jogo
-func (gs *GameState) AddTower(x, y float64) *entity.Tower {
+func (gs *GameState) AddTower(x, y float64, towerType string) *entity.Tower {
 	id := gs.GenerateID()
 	tower := &entity.Tower{
 		Entity: entity.Entity{
 			ID:        id,
 			Type:      entity.EntityTower,
+			Faction:   entity.FactionIronVanguard,
 			X:         x,
 			Y:         y,
 			Health:    100,
 			MaxHealth: 100,
 			Dead:      false,
 		},
-		Level:    1,
-		Damage:   10,
-		Range:    100,
-		FireRate: 1.0,
-		LastFire: 0,
+		Level:     1,
+		TowerType: towerType,
 	}
+	
+	// Configurar stats baseados no tipo de torre
+	switch towerType {
+	case "cannon":
+		tower.Damage = 25
+		tower.Range = 80
+		tower.FireRate = 0.5
+	case "laser":
+		tower.Damage = 5
+		tower.Range = 120
+		tower.FireRate = 2.0
+	case "missile":
+		tower.Damage = 15
+		tower.Range = 150
+		tower.FireRate = 0.8
+	default: // basic
+		tower.Damage = 10
+		tower.Range = 100
+		tower.FireRate = 1.0
+	}
+	
 	gs.Towers[id] = tower
 	gs.Entities[id] = &tower.Entity
 	return tower
+}
+
+// AddUnit adiciona uma unidade controlável ao jogo
+func (gs *GameState) AddUnit(x, y float64, unitType string, faction entity.Faction) *entity.Unit {
+	id := gs.GenerateID()
+	unit := &entity.Unit{
+		Entity: entity.Entity{
+			ID:        id,
+			Type:      entity.EntityUnit,
+			Faction:   faction,
+			X:         x,
+			Y:         y,
+			Health:    100,
+			MaxHealth: 100,
+			Dead:      false,
+		},
+		UnitType:    unitType,
+		TargetX:     x,
+		TargetY:     y,
+		Moving:      false,
+		Attacking:   false,
+	}
+	
+	// Configurar stats baseados no tipo de unidade
+	switch unitType {
+	case "tank":
+		unit.Damage = 15
+		unit.Speed = 30
+		unit.AttackRange = 40
+		unit.Health = 200
+		unit.MaxHealth = 200
+	case "ranger":
+		unit.Damage = 12
+		unit.Speed = 50
+		unit.AttackRange = 120
+		unit.Health = 60
+		unit.MaxHealth = 60
+	default: // soldier
+		unit.Damage = 10
+		unit.Speed = 40
+		unit.AttackRange = 50
+	}
+	
+	gs.Units[id] = unit
+	gs.Entities[id] = &unit.Entity
+	return unit
 }
 
 // AddEnemy adiciona um inimigo ao jogo
@@ -108,6 +174,11 @@ func (gs *GameState) Update(dt float64) {
 	// Atualizar torres (combate)
 	for _, tower := range gs.Towers {
 		gs.updateTower(tower, dt)
+	}
+	
+	// Atualizar unidades
+	for _, unit := range gs.Units {
+		gs.updateUnit(unit, dt)
 	}
 	
 	// Atualizar projéteis
@@ -208,7 +279,76 @@ func (gs *GameState) cleanupDeadEntities() {
 		}
 	}
 	
+	for id, unit := range gs.Units {
+		if unit.Dead {
+			toRemove = append(toRemove, id)
+		}
+	}
+	
 	for _, id := range toRemove {
 		gs.RemoveEntity(id)
+	}
+}
+
+// updateUnit move e faz a unidade combater
+func (gs *GameState) updateUnit(unit *entity.Unit, dt float64) {
+	// Se estiver movendo, mover até o alvo
+	if unit.Moving {
+		dx := unit.TargetX - unit.X
+		dy := unit.TargetY - unit.Y
+		dist := math.Sqrt(dx*dx + dy*dy)
+		
+		if dist < 1 {
+			unit.Moving = false
+		} else {
+			unit.X += dx / dist * unit.Speed * dt
+			unit.Y += dy / dist * unit.Speed * dt
+		}
+	}
+	
+	// Procurar inimigos próximos para atacar
+	unit.Attacking = false
+	for _, enemy := range gs.Enemies {
+		if enemy.Dead {
+			continue
+		}
+		dx := enemy.X - unit.X
+		dy := enemy.Y - unit.Y
+		dist := math.Sqrt(dx*dx + dy*dy)
+		
+		if dist <= unit.AttackRange {
+			// Atacar inimigo
+			unit.Attacking = true
+			enemy.Health -= unit.Damage * dt
+			if enemy.Health <= 0 {
+				enemy.Dead = true
+				gs.Gold += enemy.Bounty
+			}
+			break
+		}
+	}
+	
+	// Se não atacou inimigo, procurar unidades inimigas
+	if !unit.Attacking {
+		for _, otherUnit := range gs.Units {
+			if otherUnit.Dead || otherUnit.ID == unit.ID {
+				continue
+			}
+			// Unidades de facções diferentes se atacam
+			if unit.Faction != otherUnit.Faction && otherUnit.Faction != entity.FactionNone {
+				dx := otherUnit.X - unit.X
+				dy := otherUnit.Y - unit.Y
+				dist := math.Sqrt(dx*dx + dy*dy)
+				
+				if dist <= unit.AttackRange {
+					unit.Attacking = true
+					otherUnit.Health -= unit.Damage * dt
+					if otherUnit.Health <= 0 {
+						otherUnit.Dead = true
+					}
+					break
+				}
+			}
+		}
 	}
 }

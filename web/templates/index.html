@@ -185,6 +185,21 @@
                         <p>Dano: 10 | Alcance: 100</p>
                         <p style="color: #00d9ff;">50 ouro</p>
                     </div>
+                    <div class="tower-card" data-tower="cannon" data-cost="80">
+                        <h4>Canhão</h4>
+                        <p>Dano: 25 | Alcance: 80</p>
+                        <p style="color: #00d9ff;">80 ouro</p>
+                    </div>
+                    <div class="tower-card" data-tower="laser" data-cost="70">
+                        <h4>Laser</h4>
+                        <p>Dano: 5 | Alcance: 120</p>
+                        <p style="color: #00d9ff;">70 ouro</p>
+                    </div>
+                    <div class="tower-card" data-tower="missile" data-cost="100">
+                        <h4>Míssil</h4>
+                        <p>Dano: 15 | Alcance: 150</p>
+                        <p style="color: #00d9ff;">100 ouro</p>
+                    </div>
                 </div>
                 <button id="startWaveBtn">🌊 Iniciar Wave</button>
             </div>
@@ -328,7 +343,7 @@
                 const response = await fetch('/api/build', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ x, y })
+                    body: JSON.stringify({ x, y, tower_type: selectedTower })
                 });
                 
                 const result = await response.json();
@@ -343,10 +358,107 @@
                         maxHealth: 100
                     });
                     updateUI();
-                    log(`Torre construída em (${Math.round(x)}, ${Math.round(y)})`, 'success');
+                    log(`Torre ${selectedTower} construída em (${Math.round(x)}, ${Math.round(y)})`, 'success');
                 } else {
                     log(result.error || 'Erro ao construir torre', 'error');
                 }
+            } catch (err) {
+                log(`Erro: ${err.message}`, 'error');
+            }
+        });
+        
+        // Seção de Unidades
+        const unitSection = document.createElement('div');
+        unitSection.className = 'stat-box';
+        unitSection.innerHTML = `
+            <h3>Unidades</h3>
+            <div class="tower-select">
+                <div class="tower-card" data-unit="soldier" data-cost="60">
+                    <h4>Soldado</h4>
+                    <p>Dano: 10 | Vida: 100</p>
+                    <p style="color: #00d9ff;">60 ouro</p>
+                </div>
+                <div class="tower-card" data-unit="tank" data-cost="100">
+                    <h4>Tanque</h4>
+                    <p>Dano: 15 | Vida: 200</p>
+                    <p style="color: #00d9ff;">100 ouro</p>
+                </div>
+                <div class="tower-card" data-unit="ranger" data-cost="70">
+                    <h4>Ranger</h4>
+                    <p>Dano: 12 | Vida: 60</p>
+                    <p style="color: #00d9ff;">70 ouro</p>
+                </div>
+            </div>
+            <p style="font-size: 11px; color: #aaa; margin-bottom: 10px;">
+                • Clique em uma unidade para selecionar<br>
+                • Clique no mapa para mover
+            </p>
+        `;
+        document.querySelector('#sidebar').insertBefore(unitSection, document.querySelector('#log').parentElement);
+        
+        let selectedUnitId = null;
+        
+        // Seleção de unidades
+        document.querySelectorAll('[data-unit]').forEach(card => {
+            card.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('[data-unit]').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                
+                const unitType = card.dataset.unit;
+                const cost = parseInt(card.dataset.cost);
+                
+                if (gameState.gold >= cost) {
+                    try {
+                        const response = await fetch('/api/unit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                x: canvas.width / 2, 
+                                y: canvas.height / 2 + 100, 
+                                unit_type: unitType,
+                                faction: 1
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        if (result.success) {
+                            gameState.gold -= cost;
+                            gameState.units = gameState.units || [];
+                            gameState.units.push({
+                                id: result.unit_id,
+                                x: canvas.width / 2,
+                                y: canvas.height / 2 + 100,
+                                type: unitType,
+                                moving: false
+                            });
+                            updateUI();
+                            log(`${unitType} criado!`, 'success');
+                        }
+                    } catch (err) {
+                        log(`Erro: ${err.message}`, 'error');
+                    }
+                } else {
+                    log('Ouro insuficiente!', 'error');
+                }
+            });
+        });
+        
+        // Clique para mover unidade
+        canvas.addEventListener('click', async (e) => {
+            if (!selectedUnitId) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            try {
+                await fetch('/api/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ unit_id: selectedUnitId, target_x: x, target_y: y })
+                });
+                log(`Unidade movendo para (${Math.round(x)}, ${Math.round(y)})`, 'info');
             } catch (err) {
                 log(`Erro: ${err.message}`, 'error');
             }
